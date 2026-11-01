@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "project_id": "PROJECT_002_SYNTHETIC",
+  "revision": 0,
+  "lease": null,
+  "records": {},
+  "purpose": "non-authoritative live GitHub CAS contention test"
+}
