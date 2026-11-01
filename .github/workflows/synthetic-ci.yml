@@ -38,7 +38,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           echo "VERIFIED_EXACT_HEAD=$EXPECTED_HEAD"
       - name: Verify contract
-        run: python3 -c "from pathlib import Path; assert Path('README.md').is_file()"
+        run: python3 -m unittest discover -s tests -p 'test_workflow_contract.py' -v
   deployment-smoke:
     runs-on: ubuntu-latest
     steps:
