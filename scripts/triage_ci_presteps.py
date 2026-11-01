@@ -41,6 +41,8 @@ def triage(run, jobs, checks):
                 or type(job.get("run_attempt")) is not int
                 or job["run_attempt"] != attempt or job.get("head_sha") != sha):
             raise InvalidEvidence("job belongs to another run, attempt or HEAD")
+        if job.get("status") != "completed":
+            raise InvalidEvidence("job status not completed")
         runner_id, runner_name = job.get("runner_id"), job.get("runner_name")
         if type(runner_id) is not int or runner_id < 0 or type(runner_name) is not str:
             raise InvalidEvidence("invalid runner identity metadata")
@@ -59,6 +61,8 @@ def triage(run, jobs, checks):
         if type(check) is not dict or type(check.get("id")) is not int or check["id"] not in by_id:
             raise InvalidEvidence("unmatched check-run")
         job = by_id[check["id"]]
+        if check.get("status") != "completed":
+            raise InvalidEvidence("check-run status not completed")
         if check.get("name") != job["name"] or check.get("conclusion") != job.get("conclusion"):
             raise InvalidEvidence("job/check-run disagreement")
         count = (check.get("output") or {}).get("annotations_count")
