@@ -1,0 +1,129 @@
+name: phase1-immutable-artifact-race
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: phase1-artifact-race-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  host-a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      head_sha: ${{ steps.evidence.outputs.head_sha }}
+      boot_id: ${{ steps.evidence.outputs.boot_id }}
+      hostname: ${{ steps.evidence.outputs.hostname }}
+      claim_outcome: ${{ steps.claim.outcome }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare exact-head synthetic claim A
+        id: evidence
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "VERIFIED_EXACT_HEAD=$EXPECTED_HEAD"
+          echo "head_sha=$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+          echo "boot_id=$(cat /proc/sys/kernel/random/boot_id)" >> "$GITHUB_OUTPUT"
+          echo "hostname=$(hostname)" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = dict(schema_version=1, project_id="PROJECT_002_SYNTHETIC",
+                         claim_type="IMMUTABLE_SINGLE_CREATE", worker="host-a",
+                         head_sha=os.environ["EXPECTED_HEAD"],
+                         boot_id=Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+                         run_id=os.environ["EXPECTED_RUN_ID"])
+          Path("claim.json").write_text(json.dumps(payload, sort_keys=True))
+          PY
+      - name: Compete for one immutable artifact name A
+        id: claim
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1-synthetic-single-create
+          path: claim.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 1
+  host-b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      head_sha: ${{ steps.evidence.outputs.head_sha }}
+      boot_id: ${{ steps.evidence.outputs.boot_id }}
+      hostname: ${{ steps.evidence.outputs.hostname }}
+      claim_outcome: ${{ steps.claim.outcome }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare exact-head synthetic claim B
+        id: evidence
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "VERIFIED_EXACT_HEAD=$EXPECTED_HEAD"
+          echo "head_sha=$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+          echo "boot_id=$(cat /proc/sys/kernel/random/boot_id)" >> "$GITHUB_OUTPUT"
+          echo "hostname=$(hostname)" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = dict(schema_version=1, project_id="PROJECT_002_SYNTHETIC",
+                         claim_type="IMMUTABLE_SINGLE_CREATE", worker="host-b",
+                         head_sha=os.environ["EXPECTED_HEAD"],
+                         boot_id=Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+                         run_id=os.environ["EXPECTED_RUN_ID"])
+          Path("claim.json").write_text(json.dumps(payload, sort_keys=True))
+          PY
+      - name: Compete for one immutable artifact name B
+        id: claim
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1-synthetic-single-create
+          path: claim.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 1
+  verify-claim:
+    needs: [host-a, host-b]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Download externally stored winning artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: phase1-synthetic-single-create
+      - name: Verify two hosts and exactly one externally readable claim
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          HOST_A_HEAD_SHA: ${{ needs.host-a.outputs.head_sha }}
+          HOST_A_BOOT_ID: ${{ needs.host-a.outputs.boot_id }}
+          HOST_A_HOSTNAME: ${{ needs.host-a.outputs.hostname }}
+          HOST_A_CLAIM_OUTCOME: ${{ needs.host-a.outputs.claim_outcome }}
+          HOST_B_HEAD_SHA: ${{ needs.host-b.outputs.head_sha }}
+          HOST_B_BOOT_ID: ${{ needs.host-b.outputs.boot_id }}
+          HOST_B_HOSTNAME: ${{ needs.host-b.outputs.hostname }}
+          HOST_B_CLAIM_OUTCOME: ${{ needs.host-b.outputs.claim_outcome }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "VERIFIED_EXACT_HEAD=$EXPECTED_HEAD"
+          python3 -m scripts.verify_artifact_claim
