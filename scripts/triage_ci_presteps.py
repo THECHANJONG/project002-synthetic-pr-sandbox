@@ -23,6 +23,15 @@ def triage(run, jobs, checks):
         raise InvalidEvidence("missing exact SHA")
     if run.get("status") != "completed" or run.get("event") not in ("push", "pull_request"):
         raise InvalidEvidence("not a completed supported run")
+    # A feature-branch push can share main\'s SHA (for example, immediately
+    # after branch creation). SHA equality alone NEVER proves a main CI run.
+    head_branch = run.get("head_branch")
+    if (type(head_branch) is not str or not head_branch
+            or len(head_branch) > 255 or head_branch != head_branch.strip()):
+        raise InvalidEvidence("missing or malformed workflow head branch")
+    run_scope = ("MAIN_PUSH" if run["event"] == "push" and head_branch == "main"
+                 else "OTHER_BRANCH_PUSH" if run["event"] == "push"
+                 else "PULL_REQUEST")
     if len(jobs) != 3 or len(checks) != 3:
         raise InvalidEvidence("expected exactly three jobs and check-runs")
     run_id, attempt = run.get("id"), run.get("run_attempt")
@@ -92,6 +101,13 @@ def triage(run, jobs, checks):
     return {
         "classification": classification,
         "head_sha": sha,
+        "head_branch": head_branch,
+        "run_scope": run_scope,
+        # Never attribute an unrelated feature-branch/PR failure to main.
+        "main_push_ci_status": ("NOT_THIS_RUN" if run_scope != "MAIN_PUSH"
+                                else "SUCCESS_STEPS_PRESENT" if classification == "EXACT_RUN_JOBS_SUCCESS_STEPS_PRESENT"
+                                else "FAILURE_NO_STEPS_OBSERVED" if classification.startswith("ALL_JOBS_FAILED_NO_STEPS")
+                                else "INCONCLUSIVE_FAIL_CLOSED"),
         "run_id": run_id,
         "run_attempt": attempt,
         "runner_assignment_metadata": runner_assignment,

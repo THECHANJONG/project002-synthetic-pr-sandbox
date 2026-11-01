@@ -10,7 +10,7 @@ NAMES = ("unit-tests", "plugin-contract", "deployment-smoke")
 
 def fixture(conclusion="failure", steps=None):
     run = {"id": 123, "run_attempt": 1, "head_sha": SHA, "event": "push",
-           "status": "completed", "conclusion": conclusion}
+           "head_branch": "main", "status": "completed", "conclusion": conclusion}
     jobs = [{"id": i + 10, "name": n, "status": "completed", "conclusion": conclusion, "steps": steps,
              "run_id": 123, "run_attempt": 1, "head_sha": SHA,
              "runner_id": 0 if conclusion == "failure" else i + 1,
@@ -31,6 +31,40 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(result["runner_or_billing_failure"], "NOT_PROVEN")
         self.assertEqual(result["annotation_counts"]["unit-tests"], 2)
         self.assertFalse(result["safe_to_merge"])
+
+    def test_feature_branch_failure_is_not_main_ci_failure(self):
+        run, jobs, checks = fixture()
+        # Same SHA as main, but the failed workflow ran on a feature branch.
+        run["head_branch"] = "foundation/phase1-coordinator-exact-json-20261028"
+        result = triage(run, jobs, checks)
+        self.assertEqual(result["run_scope"], "OTHER_BRANCH_PUSH")
+        self.assertEqual(result["main_push_ci_status"], "NOT_THIS_RUN")
+        self.assertEqual(result["head_sha"], SHA)
+        self.assertEqual(result["root_cause"], "NOT_PROVEN")
+
+    def test_main_push_failure_is_attributed_to_main_only(self):
+        result = triage(*fixture())
+        self.assertEqual(result["run_scope"], "MAIN_PUSH")
+        self.assertEqual(result["main_push_ci_status"], "FAILURE_NO_STEPS_OBSERVED")
+
+    def test_pr_run_is_not_main_push_even_with_main_named_head(self):
+        run, jobs, checks = fixture()
+        run["event"] = "pull_request"
+        result = triage(run, jobs, checks)
+        self.assertEqual(result["run_scope"], "PULL_REQUEST")
+        self.assertEqual(result["main_push_ci_status"], "NOT_THIS_RUN")
+
+    def test_missing_or_invalid_branch_is_rejected(self):
+        for branch in (None, "", 123, " main", "main ", "x" * 256):
+            with self.subTest(branch=branch):
+                run, jobs, checks = fixture()
+                run["head_branch"] = branch
+                with self.assertRaises(InvalidEvidence):
+                    triage(run, jobs, checks)
+
+    def test_main_push_success_scope(self):
+        result = triage(*fixture("success", [{"name": "Set up job"}]))
+        self.assertEqual(result["main_push_ci_status"], "SUCCESS_STEPS_PRESENT")
 
     def test_success_requires_steps(self):
         result = triage(*fixture("success", [{"name": "Set up job"}]))
