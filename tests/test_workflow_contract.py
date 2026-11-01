@@ -21,6 +21,12 @@ def validate_workflow(source):
         problems.append("missing read-only token permission")
     if re.search(r"(?m)^\s+[a-z_-]+:\s*write\s*$", source):
         problems.append("write permission")
+    if not all(line in source for line in (
+        "concurrency:",
+        "  group: synthetic-ci-\u0024{{ github.workflow }}-\u0024{{ github.event.pull_request.number || github.ref }}",
+        "  cancel-in-progress: true",
+    )):
+        problems.append("missing bounded concurrency")
     if "secrets." in source:
         problems.append("secret reference")
     if not re.search(r"(?m)^  pull_request:\s*$", source):
@@ -35,6 +41,8 @@ def validate_workflow(source):
 
     for name in REQUIRED_JOBS:
         body = blocks.get(name, "")
+        if "    timeout-minutes: 10\n" not in body:
+            problems.append(name + ": missing job timeout")
         for label, expected in (
             ("pinned checkout", CHECKOUT),
             ("exact checkout ref", "ref: " + EVENT_HEAD),
@@ -77,6 +85,14 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_rejects_removed_job(self):
         changed = self.valid.replace("  deployment-smoke:\n", "  missing-job:\n", 1)
+        self.assertTrue(validate_workflow(changed))
+
+    def test_rejects_unbounded_concurrency(self):
+        changed = self.valid.replace("  cancel-in-progress: true", "  cancel-in-progress: false", 1)
+        self.assertTrue(validate_workflow(changed))
+
+    def test_rejects_missing_job_timeout(self):
+        changed = self.valid.replace("    timeout-minutes: 10", "    timeout-minutes: 0", 1)
         self.assertTrue(validate_workflow(changed))
 
     def test_rejects_secret_reference(self):
