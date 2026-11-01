@@ -1,8 +1,9 @@
 """Fail-closed validation of normalized *external* merge evidence.
 
 This module never queries GitHub or performs a merge. The caller must independently
-fetch current PR, ruleset and exact-head job records immediately before merging.
-Passing fixture tests does not prove a live ruleset or scheduler-origin execution.
+fetch current PR, ruleset, protected-branch and exact-head job records immediately
+before merging. Passing fixture tests does not prove live ruleset enforcement,
+scheduler-origin execution, or an independently authorized worker.
 """
 import re
 
@@ -30,7 +31,14 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head):
     if ruleset.get("enforcement") != "active" or ruleset.get("branch") != "main":
         errors.append("main protection not active")
     if ruleset.get("bypass_actors") != []:
-        errors.append("bypass status not verified empty")
+        errors.append("bypass actors not verified empty")
+    # A ruleset with no explicit bypass actors is insufficient if the caller
+    # still has an effective bypass. Require the server's effective permission.
+    if ruleset.get("current_user_can_bypass") != "never":
+        errors.append("effective bypass permission not verified absent")
+    # The branch endpoint is an independent readback of applied protection.
+    if ruleset.get("branch_protected") is not True:
+        errors.append("main branch not confirmed protected")
     if ruleset.get("require_pull_request") is not True:
         errors.append("PR rule missing")
     if ruleset.get("require_up_to_date") is not True:
