@@ -12,6 +12,7 @@ def evidence():
     pr = dict(base_branch="main", base_sha=BASE, head_sha=HEAD,
               state="open", draft=False, mergeable=True)
     rules = dict(enforcement="active", branch="main", bypass_actors=[],
+                 current_user_can_bypass="never", branch_protected=True,
                  require_pull_request=True, require_up_to_date=True,
                  required_checks=[dict(context=n, source="GitHub Actions") for n in NAMES])
     jobs = [dict(name=n, head_sha=HEAD, status="completed",
