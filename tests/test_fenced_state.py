@@ -83,6 +83,12 @@ class FencingTransitions(unittest.TestCase):
         with self.assertRaises(UnsafeTransition):
             write(state)
 
+    def test_boolean_schema_version_is_rejected(self):
+        state = snapshot()
+        state["schema_version"] = True
+        with self.assertRaises(UnsafeTransition):
+            write(state)
+
     def test_wrong_project_is_rejected(self):
         state = snapshot()
         state["project_id"] = "PROJECT_002"
