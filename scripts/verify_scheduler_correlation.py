@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import re
 import uuid
 
-SHA = re.compile(r"[0-9a-f]{40}\\Z")
+SHA = re.compile(r"[0-9a-f]{40}\Z")
 REQUIRED = {"unit-tests", "plugin-contract", "deployment-smoke"}
 
 
