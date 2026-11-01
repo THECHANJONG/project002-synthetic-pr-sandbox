@@ -1,0 +1,81 @@
+name: phase1-dual-runner-readonly
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: dual-runner-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  host-a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      boot_id: ${{ steps.evidence.outputs.boot_id }}
+      hostname: ${{ steps.evidence.outputs.hostname }}
+      head_sha: ${{ steps.evidence.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact HEAD and record independent Linux boot
+        id: evidence
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "VERIFIED_EXACT_HEAD=$EXPECTED_HEAD"
+          echo "head_sha=$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+          echo "boot_id=$(cat /proc/sys/kernel/random/boot_id)" >> "$GITHUB_OUTPUT"
+          echo "hostname=$(hostname)" >> "$GITHUB_OUTPUT"
+      - name: Execute real subprocess crash recovery tests on host A
+        run: python3 -m unittest discover -s tests -p 'test_sqlite_two_process_recovery.py' -v
+  host-b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      boot_id: ${{ steps.evidence.outputs.boot_id }}
+      hostname: ${{ steps.evidence.outputs.hostname }}
+      head_sha: ${{ steps.evidence.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact HEAD and record independent Linux boot
+        id: evidence
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          echo "VERIFIED_EXACT_HEAD=$EXPECTED_HEAD"
+          echo "head_sha=$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+          echo "boot_id=$(cat /proc/sys/kernel/random/boot_id)" >> "$GITHUB_OUTPUT"
+          echo "hostname=$(hostname)" >> "$GITHUB_OUTPUT"
+      - name: Execute real subprocess crash recovery tests on host B
+        run: python3 -m unittest discover -s tests -p 'test_sqlite_two_process_recovery.py' -v
+  verify-independent-hosts:
+    needs: [host-a, host-b]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Fail closed unless two distinct boots verified exact same HEAD
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          HOST_A_BOOT_ID: ${{ needs.host-a.outputs.boot_id }}
+          HOST_A_HOSTNAME: ${{ needs.host-a.outputs.hostname }}
+          HOST_A_HEAD_SHA: ${{ needs.host-a.outputs.head_sha }}
+          HOST_B_BOOT_ID: ${{ needs.host-b.outputs.boot_id }}
+          HOST_B_HOSTNAME: ${{ needs.host-b.outputs.hostname }}
+          HOST_B_HEAD_SHA: ${{ needs.host-b.outputs.head_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          python3 -m scripts.verify_runner_evidence
