@@ -56,6 +56,22 @@ class FencingTransitions(unittest.TestCase):
         self.assertEqual(result["revision"], 3)
         self.assertEqual(result["records"], {"x": {"ok": True}})
 
+    def test_existing_receipt_cannot_be_overwritten(self):
+        state = snapshot()
+        state["records"]["x"] = {"ok": False}
+        before = deepcopy(state)
+        with self.assertRaisesRegex(UnsafeTransition, "already exists"):
+            write(state)
+        self.assertEqual(state, before)
+
+    def test_existing_receipt_replay_is_rejected_even_if_identical(self):
+        state = snapshot()
+        state["records"]["x"] = {"ok": True}
+        before = deepcopy(state)
+        with self.assertRaisesRegex(UnsafeTransition, "already exists"):
+            write(state)
+        self.assertEqual(state, before)
+
     def test_stale_token_even_with_fresh_blob_is_rejected(self):
         self.rejected_write(fencing_token=1)
 

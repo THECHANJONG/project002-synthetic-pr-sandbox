@@ -49,6 +49,12 @@ class SeparateProcessCrashRecovery(unittest.TestCase):
                                "--revision", "1", "--key", "committed")
             self.assertEqual(committed["revision"], 2)
             self.assertEqual(committed["records"], {"committed": winner["owner"]})
+            # A valid current owner and revision still cannot overwrite an
+            # immutable receipt. Failed retry must not advance the revision.
+            duplicate = invoke("write", "--owner", winner["owner"], "--token", "1",
+                               "--revision", "2", "--key", "committed", expected=3)
+            self.assertEqual(duplicate["rejected"], "Rejected")
+            self.assertEqual(invoke("inspect"), committed)
 
             # OS process terminates without rollback/commit after changing a row.
             killed = subprocess.run(
@@ -80,6 +86,10 @@ class SeparateProcessCrashRecovery(unittest.TestCase):
                 "committed": winner["owner"], "recovered": loser,
             })
             self.assertEqual(invoke("inspect")["records"], recovered["records"])
+            replay = invoke("write", "--owner", loser, "--token", "2",
+                            "--revision", "4", "--key", "recovered", expected=3)
+            self.assertEqual(replay["rejected"], "Rejected")
+            self.assertEqual(invoke("inspect"), recovered)
 
 
 if __name__ == "__main__":

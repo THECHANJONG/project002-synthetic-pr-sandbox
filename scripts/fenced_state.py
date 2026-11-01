@@ -66,6 +66,10 @@ def guarded_record_write(snapshot, *, current_blob_sha, expected_blob_sha,
         raise UnsafeTransition("lease expired")
     if type(record_key) is not str or not record_key:
         raise UnsafeTransition("invalid record key")
+    # Receipts are append-only. Replays must verify the existing value via
+    # readback; neither a same-value retry nor a new value may overwrite it.
+    if record_key in snapshot["records"]:
+        raise UnsafeTransition("receipt key already exists; read back instead")
     updated = deepcopy(snapshot)
     updated["revision"] += 1
     updated["records"][record_key] = deepcopy(value)
