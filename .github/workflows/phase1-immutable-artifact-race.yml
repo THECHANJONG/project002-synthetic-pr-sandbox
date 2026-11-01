@@ -107,17 +107,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Download host A immutable artifact by exact ID
+      - name: Download one same-name artifact to demonstrate ambiguity
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: ${{ needs.host-a.outputs.artifact_id }}
-          path: claims/a
-      - name: Download host B immutable artifact by exact ID
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          artifact-ids: ${{ needs.host-b.outputs.artifact_id }}
-          path: claims/b
-      - name: Verify both independent receipts and reject artifact-name-as-lock
+          name: phase1-synthetic-single-create
+      - name: Reject artifact name as CAS and check one returned receipt
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           EXPECTED_RUN_ID: ${{ github.run_id }}
