@@ -11,12 +11,19 @@ REQUIRED = frozenset({"unit-tests", "plugin-contract", "deployment-smoke"})
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
-def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head):
+def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head,
+                          run=None, expected_repo=None, expected_workflow=None):
     errors = []
     if not all(isinstance(x, str) and SHA.fullmatch(x)
                for x in (expected_base, expected_head)):
         errors.append("invalid expected commit SHA")
-    if not isinstance(pr, dict) or not isinstance(ruleset, dict) or not isinstance(jobs, list):
+    if (type(expected_repo) is not str or "/" not in expected_repo
+            or type(expected_workflow) is not str
+            or not expected_workflow.startswith(".github/workflows/")
+            or not expected_workflow.endswith((".yml", ".yaml"))):
+        errors.append("expected repository/workflow identity missing")
+    if (type(pr) is not dict or type(ruleset) is not dict
+            or type(jobs) is not list or type(run) is not dict):
         return errors + ["missing or malformed external evidence"]
 
     if pr.get("base_branch") != "main" or pr.get("base_sha") != expected_base:
@@ -27,6 +34,9 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head):
         errors.append("PR not ready")
     if pr.get("mergeable") is not True:
         errors.append("PR not confirmed mergeable")
+    if (type(pr.get("number")) is not int or pr["number"] <= 0
+            or pr.get("repository") != expected_repo):
+        errors.append("PR number/repository not verified")
 
     if ruleset.get("enforcement") != "active" or ruleset.get("branch") != "main":
         errors.append("main protection not active")
@@ -62,6 +72,20 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head):
         if set(observed) != REQUIRED or any(observed.get(n) != "GitHub Actions" for n in REQUIRED):
             errors.append("required checks or trusted source mismatch")
 
+    # Prevent combining green jobs from unrelated runs or rerun attempts,
+    # even when their exact commit SHA happens to be identical.
+    run_id, attempt = run.get("id"), run.get("run_attempt")
+    if (type(run_id) is not int or run_id <= 0
+            or type(attempt) is not int or attempt <= 0
+            or run.get("head_sha") != expected_head
+            or run.get("repository") != expected_repo
+            or run.get("workflow_path") != expected_workflow
+            or run.get("pr_number") != pr.get("number")
+            or type(run.get("pr_number")) is not int
+            or run.get("event") != "pull_request"
+            or run.get("status") != "completed"
+            or run.get("conclusion") != "success"):
+        errors.append("PR workflow run identity/success unverified")
     seen = set()
     for job in jobs:
         if not isinstance(job, dict):
@@ -81,6 +105,11 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head):
                 or job.get("conclusion") != "success"
                 or job.get("source") != "GitHub Actions"):
             errors.append(str(name) + ": exact-head CI unverified")
+        if (type(job.get("run_id")) is not int
+                or type(job.get("run_attempt")) is not int
+                or job["run_id"] != run_id
+                or job["run_attempt"] != attempt):
+            errors.append(str(name) + ": mixed workflow run or attempt")
     if seen != REQUIRED:
         errors.append("required CI jobs missing")
     return errors
