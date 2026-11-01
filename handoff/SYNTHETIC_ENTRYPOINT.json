@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "project_id": "PROJECT_002",
+  "repository": "THECHANJONG/project002-synthetic-pr-sandbox",
+  "phase": "PHASE_1",
+  "authority": "NON_AUTHORITATIVE_SYNTHETIC_ONLY",
+  "read_only_task": "VERIFY_REMOTE_HEAD_AND_REPORT_LIMITS",
+  "source_ref": "GITHUB_EVENT_HEAD",
+  "scheduler_invocation_attestation": "UNAVAILABLE",
+  "official_notion_pointer": "NOT_INCLUDED",
+  "write_authorized": false
+}
