@@ -45,6 +45,9 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head):
                 errors.append("invalid check entry")
                 continue
             name = check.get("context")
+            if not isinstance(name, str):
+                errors.append("invalid check context")
+                continue
             if name in observed:
                 errors.append("duplicate required check")
             observed[name] = check.get("source")
@@ -57,6 +60,9 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head):
             errors.append("malformed job")
             continue
         name = job.get("name")
+        if not isinstance(name, str):
+            errors.append("invalid job name")
+            continue
         if name not in REQUIRED:
             continue
         if name in seen:
