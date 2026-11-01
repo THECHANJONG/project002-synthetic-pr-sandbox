@@ -11,12 +11,12 @@ NAMES = ("unit-tests", "plugin-contract", "deployment-smoke")
 def fixture(conclusion="failure", steps=None):
     run = {"id": 123, "run_attempt": 1, "head_sha": SHA, "event": "push",
            "status": "completed", "conclusion": conclusion}
-    jobs = [{"id": i + 10, "name": n, "conclusion": conclusion, "steps": steps,
+    jobs = [{"id": i + 10, "name": n, "status": "completed", "conclusion": conclusion, "steps": steps,
              "run_id": 123, "run_attempt": 1, "head_sha": SHA,
              "runner_id": 0 if conclusion == "failure" else i + 1,
              "runner_name": "" if conclusion == "failure" else "GitHub Actions " + str(i + 1)}
             for i, n in enumerate(NAMES)]
-    checks = [{"id": i + 10, "name": n, "conclusion": conclusion,
+    checks = [{"id": i + 10, "name": n, "status": "completed", "conclusion": conclusion,
                "output": {"annotations_count": 2}} for i, n in enumerate(NAMES)]
     return run, jobs, checks
 
@@ -46,6 +46,30 @@ class TriageTests(unittest.TestCase):
         jobs[0]["conclusion"] = "success"
         checks[0]["conclusion"] = "success"
         self.assertEqual(triage(run, jobs, checks)["classification"], "INCONCLUSIVE_FAIL_CLOSED")
+
+    def test_rejects_unfinished_job_even_when_green(self):
+        run, jobs, checks = fixture("success", [{"name": "Set up job"}])
+        jobs[0]["status"] = "in_progress"
+        with self.assertRaises(InvalidEvidence):
+            triage(run, jobs, checks)
+
+    def test_rejects_unfinished_check_even_when_green(self):
+        run, jobs, checks = fixture("success", [{"name": "Set up job"}])
+        checks[1]["status"] = "queued"
+        with self.assertRaises(InvalidEvidence):
+            triage(run, jobs, checks)
+
+    def test_rejects_missing_job_status(self):
+        run, jobs, checks = fixture()
+        del jobs[0]["status"]
+        with self.assertRaises(InvalidEvidence):
+            triage(run, jobs, checks)
+
+    def test_rejects_missing_check_status(self):
+        run, jobs, checks = fixture()
+        del checks[0]["status"]
+        with self.assertRaises(InvalidEvidence):
+            triage(run, jobs, checks)
 
     def test_rejects_missing_job(self):
         run, jobs, checks = fixture()
