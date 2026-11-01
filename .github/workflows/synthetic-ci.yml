@@ -1,0 +1,27 @@
+name: synthetic-ci
+on:
+  push:
+    branches: [main, 'test/**']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify synthetic fixture
+        run: python3 -m unittest discover -s tests -v
+  plugin-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify contract
+        run: python3 -c "from pathlib import Path; assert Path('README.md').is_file()"
+  deployment-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify no deployment
+        run: test ! -e production.env
