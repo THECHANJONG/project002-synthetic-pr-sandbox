@@ -69,6 +69,10 @@ def change(path, op, *, owner="", token=0, revision=-1, ttl_ms=1000, key=""):
                 raise Rejected("stale lease, fencing token or revision")
             if not key:
                 raise Rejected("empty record key")
+            # Enforce append-only receipts inside the same SQLite transaction
+            # as the lease/revision check. Never silently overwrite on retry.
+            if key in state["records"]:
+                raise Rejected("receipt key already exists; read back instead")
             state["records"][key] = owner
             state["revision"] += 1
         else:
