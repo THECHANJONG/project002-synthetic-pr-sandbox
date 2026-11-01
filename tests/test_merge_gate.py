@@ -73,6 +73,12 @@ class MergeGateTests(unittest.TestCase):
     def test_malformed_external_payload(self):
         self.assertTrue(verify_merge_evidence(None, None, None, expected_base=BASE, expected_head=HEAD))
 
+    def test_unhashable_check_context(self):
+        self.check_rejected(lambda d: d[1]["required_checks"][0].update(context=["bad"]))
+
+    def test_unhashable_job_name(self):
+        self.check_rejected(lambda d: d[2][0].update(name=["bad"]))
+
     def test_invalid_expected_sha(self):
         self.assertTrue(verify_merge_evidence(*evidence(), expected_base="not-sha", expected_head=HEAD))
 
