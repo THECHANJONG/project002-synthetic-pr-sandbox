@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "project_id": "PROJECT_002_SYNTHETIC",
-  "revision": 1,
+  "revision": 2,
   "lease": {
-    "owner": "worker-A",
-    "token": 1,
-    "expires_at": "2026-11-01T10:04:00Z"
+    "owner": "worker-B",
+    "token": 2,
+    "expires_at": "2026-11-01T10:09:00Z"
   },
   "records": {},
   "purpose": "non-authoritative live GitHub CAS contention test"
