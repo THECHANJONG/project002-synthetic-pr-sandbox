@@ -1,0 +1,39 @@
+# Clean-host external GitHub checkout drill; not a new AI or official Notion RUN.
+name: phase1-fresh-worker-readonly
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: phase1-fresh-worker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  fresh-process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch exact event HEAD from external GitHub
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Reconstruct synthetic handoff from checkout and live remote ref
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          REMOTE_REF: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || 'refs/heads/main' }}
+        run: |
+          set -euo pipefail
+          CHECKED_OUT_HEAD="$(git rev-parse HEAD)"
+          REMOTE_HEAD="$(git ls-remote origin "$REMOTE_REF" | cut -f1)"
+          export CHECKED_OUT_HEAD REMOTE_HEAD
+          python3 -m scripts.verify_fresh_worker
+      - name: State strict proof boundary
+        run: |
+          echo "INDEPENDENT_AI_COLD_START=NOT_PROVEN"
+          echo "SCHEDULER_INVOCATION_ATTESTATION=UNAVAILABLE"
+          echo "OFFICIAL_NOTION_POINTER=NOT_INCLUDED"
+          echo "REMOTE_CAS_LEASE_FENCING=NOT_PROVEN"
+          echo "MUTABLE_AUTHORITY=NOT_GRANTED"
