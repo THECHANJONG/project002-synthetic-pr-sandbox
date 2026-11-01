@@ -34,7 +34,8 @@ def _validate(snapshot, *, current_blob_sha, expected_blob_sha,
         raise UnsafeTransition("missing, malformed or stale GitHub blob precondition")
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() != timedelta(0):
         raise UnsafeTransition("now must be timezone-aware UTC")
-    if not isinstance(snapshot, dict) or snapshot.get("schema_version") != 1:
+    if (not isinstance(snapshot, dict) or type(snapshot.get("schema_version")) is not int
+            or snapshot["schema_version"] != 1):
         raise UnsafeTransition("unknown synthetic state schema")
     if snapshot.get("project_id") != "PROJECT_002_SYNTHETIC":
         raise UnsafeTransition("not a synthetic test state")
