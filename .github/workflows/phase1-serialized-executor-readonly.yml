@@ -1,0 +1,39 @@
+# Non-authoritative alternative-host probe. GitHub concurrency is NOT a durable queue:
+# at most one running and one pending; a newer pending run can replace the old.
+# No remote writes, secrets, approvals, production assets or mutable authority.
+name: phase1-serialized-executor-readonly
+on:
+  push:
+    branches: [main, 'test/**']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: project002-synthetic-serialized-executor-readonly
+  cancel-in-progress: false
+jobs:
+  serialized-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact event HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Assert exact HEAD and fail-closed execution identity
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          CHECKED_OUT_HEAD="$(git rev-parse HEAD)" python3 -m scripts.verify_serialized_executor
+      - name: Exercise existing real subprocess rollback test
+        run: python3 -m unittest discover -s tests -p 'test_sqlite_two_process_recovery.py' -v
+      - name: Declare proof boundaries
+        run: |
+          echo "SERIALIZATION_SCOPE=THIS_GITHUB_WORKFLOW_GROUP_ONLY"
+          echo "GITHUB_CONCURRENCY_DURABLE_QUEUE=NOT_PROVEN"
+          echo "SHARED_REMOTE_CAS_LEASE_FENCING=NOT_PROVEN"
+          echo "SCHEDULER_TO_GITHUB_ATTESTATION=UNAVAILABLE"
+          echo "MUTABLE_AUTHORITY=NOT_GRANTED"
