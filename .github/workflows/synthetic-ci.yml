@@ -6,9 +6,13 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: synthetic-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout exact event HEAD
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -25,6 +29,7 @@ jobs:
         run: python3 -m unittest discover -s tests -v
   plugin-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout exact event HEAD
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -41,6 +46,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_workflow_contract.py' -v
   deployment-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout exact event HEAD
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
