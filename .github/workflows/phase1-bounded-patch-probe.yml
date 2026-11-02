@@ -32,6 +32,22 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_prepare_patch_artifact.py' -v
           git diff --exit-code -- .
           git diff --cached --exit-code -- .
+      - name: Fail closed on locally generated artifact before upload
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          python3 -m scripts.validate_patch_promotion \
+            --artifact phase1-patch-evidence \
+            --checkout . \
+            --expected-head "$EXPECTED_HEAD" \
+            --run-id "$EXPECTED_RUN_ID" \
+            --attempt "$EXPECTED_ATTEMPT"
+          git diff --exit-code -- .
+          git diff --cached --exit-code -- .
       - name: Upload immutable bounded patch and run receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

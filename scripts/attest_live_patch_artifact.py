@@ -8,13 +8,15 @@ Never performs a GitHub write.
 import argparse
 import hashlib
 import io
+import os
 import json
 from pathlib import Path
 import re
 import stat
 import subprocess
 import tempfile
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 import zipfile
 
 from scripts.prepare_patch_artifact import PROJECT_REPO
@@ -50,11 +52,39 @@ def _get_json(url):
                       parse_constant=_no_constant)
 
 
-def _get_zip(url):
+class _HTTPSOnlyRedirect(HTTPRedirectHandler):
+    """Never downgrade artifact downloads to HTTP."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlsplit(newurl).scheme != "https":
+            raise InvalidPromotion("non-HTTPS artifact redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _artifact_request(url, token=None):
+    """Token, if explicitly supplied, is sent to GitHub API only.
+
+    add_unredirected_header prevents urllib from forwarding the bearer
+    credential to GitHub's separate artifact CDN redirect host.
+    """
+    parsed = urlsplit(url)
+    if (parsed.scheme != "https" or parsed.hostname != "api.github.com"
+            or not url.startswith(API + "/actions/artifacts/")
+            or not url.endswith("/zip")):
+        raise InvalidPromotion("untrusted artifact API URL")
     req = Request(url, headers={"Accept": "application/vnd.github+json",
                                 "User-Agent": "project002-readonly-attestor"})
-    with urlopen(req, timeout=30) as response:
-        if not response.geturl().startswith("https://"):
+    if token is not None:
+        if (type(token) is not str or not token.strip()
+                or any(c in token for c in "\r\n")):
+            raise InvalidPromotion("invalid artifact token")
+        req.add_unredirected_header("Authorization", "Bearer " + token)
+    return req
+
+
+def _get_zip(url, token=None):
+    req = _artifact_request(url, token)
+    with build_opener(_HTTPSOnlyRedirect()).open(req, timeout=30) as response:
+        if urlsplit(response.geturl()).scheme != "https":
             raise InvalidPromotion("non-HTTPS artifact redirect")
         data = response.read(2_000_001)
     if len(data) > 2_000_000:
@@ -173,10 +203,20 @@ def main():
     parser.add_argument("--artifact-id", type=int, required=True)
     parser.add_argument("--expected-head", required=True)
     parser.add_argument("--checkout", required=True)
+    parser.add_argument("--use-actions-token", action="store_true",
+                        help="Use existing GITHUB_TOKEN only after actions:read approval")
     args = parser.parse_args()
+    if args.use_actions_token:
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            parser.error("--use-actions-token requires GITHUB_TOKEN")
+        zip_get = lambda url: _get_zip(url, token=token)
+    else:
+        zip_get = _get_zip
     print(json.dumps(attest(args.run_id, args.artifact_id,
                             expected_head=args.expected_head,
-                            checkout_root=args.checkout), sort_keys=True))
+                            checkout_root=args.checkout,
+                            zip_get=zip_get), sort_keys=True))
 
 
 if __name__ == "__main__":
