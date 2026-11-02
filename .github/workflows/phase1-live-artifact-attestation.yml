@@ -1,0 +1,41 @@
+# Read-only, fail-closed live artifact proof. No scheduler, AI authoring, PR or merge claim.
+name: phase1-live-artifact-attestation
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: phase1-live-artifact-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  attest-real-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout verifier from exact PR HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify verifier checkout
+        env:
+          EXPECTED_VERIFIER_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_VERIFIER_HEAD"
+      - name: Checkout immutable source run HEAD without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: f6f962fc17b042e120c1d14f164e2dfbdc638932
+          path: evidence-checkout
+          persist-credentials: false
+      - name: Verify historical checkout and attest actual public artifact
+        run: |
+          set -euo pipefail
+          test "$(git -C evidence-checkout rev-parse HEAD)" = "f6f962fc17b042e120c1d14f164e2dfbdc638932"
+          python3 -m scripts.attest_live_patch_artifact \
+            --run-id 41463730359 \
+            --artifact-id 13150032636 \
+            --expected-head f6f962fc17b042e120c1d14f164e2dfbdc638932 \
+            --checkout evidence-checkout
+          git diff --exit-code -- .
+          git diff --cached --exit-code -- .
