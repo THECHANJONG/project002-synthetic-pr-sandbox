@@ -14,15 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout verifier from exact PR HEAD
+      - name: Checkout workflow from exact PR HEAD
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Verify verifier checkout
+      - name: Verify workflow checkout
         env:
           EXPECTED_VERIFIER_HEAD: ${{ github.event.pull_request.head.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_VERIFIER_HEAD"
+      - name: Checkout pinned merged authenticated attestor
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fe722a740c3f5f2174368a53acf93f8f8c7661e4
+          path: attestor-checkout
+          persist-credentials: false
+      - name: Verify pinned attestor checkout
+        run: test "$(git -C attestor-checkout rev-parse HEAD)" = "fe722a740c3f5f2174368a53acf93f8f8c7661e4"
       - name: Checkout immutable source run HEAD without credentials
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -35,11 +43,11 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C evidence-checkout rev-parse HEAD)" = "f6f962fc17b042e120c1d14f164e2dfbdc638932"
-          python3 -m scripts.attest_live_patch_artifact \
+          (cd attestor-checkout && python3 -m scripts.attest_live_patch_artifact \
             --use-actions-token \
             --run-id 41463730359 \
             --artifact-id 13150032636 \
             --expected-head f6f962fc17b042e120c1d14f164e2dfbdc638932 \
-            --checkout evidence-checkout
+            --checkout ../evidence-checkout)
           git diff --exit-code -- .
           git diff --cached --exit-code -- .
