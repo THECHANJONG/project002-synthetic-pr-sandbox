@@ -78,8 +78,10 @@ class PreuploadGateContractTests(unittest.TestCase):
             "--checkout .", "--checkout /tmp", 1)))
 
     def test_rejects_removed_worktree_check(self):
-        self.assertTrue(contract_errors(self.source.replace(
-            "git diff --cached --exit-code -- .", "echo skipped", 1)))
+        gate = self.source.index(GATE)
+        mutated = (self.source[:gate] + self.source[gate:].replace(
+            "git diff --cached --exit-code -- .", "echo skipped", 1))
+        self.assertTrue(contract_errors(mutated))
 
     def test_rejects_permission_expansion(self):
         self.assertTrue(contract_errors(self.source.replace(
