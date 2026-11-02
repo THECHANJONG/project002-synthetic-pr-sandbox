@@ -144,6 +144,47 @@ class FencingTransitions(unittest.TestCase):
                          now=datetime(2026, 11, 1, 10, 10, 30, tzinfo=timezone.utc))
         self.assertEqual(accepted["revision"], 4)
 
+    def test_rejects_nonfinite_receipt_values(self):
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(bad=repr(bad)):
+                self.rejected_write(value={"nested": [bad]})
+
+    def test_rejects_nontext_nested_keys(self):
+        self.rejected_write(value={"nested": {1: "not JSON object"}})
+
+    def test_rejects_arbitrary_object_and_tuple(self):
+        self.rejected_write(value=object())
+        self.rejected_write(value=(1, 2))
+
+    def test_rejects_cyclic_receipt(self):
+        cycle = []
+        cycle.append(cycle)
+        self.rejected_write(value=cycle)
+
+    def test_rejects_excessively_nested_receipt(self):
+        nested = 0
+        for _ in range(70):
+            nested = [nested]
+        self.rejected_write(value=nested)
+
+    def test_rejects_oversized_json_integer(self):
+        self.rejected_write(value=1 << 5000)
+
+    def test_rejects_existing_corrupt_receipt_during_takeover(self):
+        state = snapshot()
+        state["records"]["corrupt"] = {"number": float("nan")}
+        with self.assertRaises(UnsafeTransition):
+            takeover(state)
+
+    def test_valid_nested_json_receipt_is_copied(self):
+        value = {"ok": True, "nothing": None, "items": [1, 2.5, "yes"]}
+        original = snapshot()
+        result = write(original, value=value)
+        self.assertEqual(result["records"]["x"], value)
+        value["items"].append("changed")
+        self.assertEqual(result["records"]["x"]["items"], [1, 2.5, "yes"])
+        self.assertEqual(original["records"], {})
+
 
 if __name__ == "__main__":
     unittest.main()
