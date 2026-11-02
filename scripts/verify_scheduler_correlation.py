@@ -11,6 +11,8 @@ import uuid
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 REQUIRED = {"unit-tests", "plugin-contract", "deployment-smoke"}
+REPOSITORY = "THECHANJONG/project002-synthetic-pr-sandbox"
+WORKFLOW_PATH = ".github/workflows/synthetic-ci.yml"
 
 
 class InvalidCorrelation(ValueError):
@@ -39,7 +41,10 @@ def _sha(value):
 def _check_run(run, *, sha, event, branch, pr_number=None):
     _require(type(run) is dict, "missing CI run")
     _require(run.get("head_sha") == sha and run.get("event") == event
-             and run.get("head_branch") == branch, "wrong CI source")
+             and run.get("head_branch") == branch
+             and run.get("repository") == REPOSITORY
+             and run.get("workflow_path") == WORKFLOW_PATH,
+             "wrong CI source or workflow identity")
     _require(run.get("status") == "completed" and run.get("conclusion") == "success",
              "CI not successful")
     _require(type(run.get("id")) is int and run["id"] > 0
@@ -85,6 +90,7 @@ def correlate(platform, github):
     _require(_sha(head) and _sha(merged_sha), "invalid PR SHA")
     _require(type(pr.get("number")) is int and pr["number"] > 0
              and pr.get("merged") is True and pr.get("base_branch") == "main"
+             and pr.get("repository") == REPOSITORY
              and type(pr.get("head_branch")) is str and pr["head_branch"] != "main",
              "PR not verified merged")
     _require(github.get("automation_run_id") == run_id,

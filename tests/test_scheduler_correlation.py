@@ -1,7 +1,9 @@
 """Synthetic controls for scheduler/GitHub correlation; not live E2E."""
 import copy
 import unittest
-from scripts.verify_scheduler_correlation import correlate, InvalidCorrelation
+from scripts.verify_scheduler_correlation import (
+    correlate, InvalidCorrelation, REPOSITORY, WORKFLOW_PATH,
+)
 
 ID = "adf6de8c-da00-8327-9cf9-8994b203c8ab"
 HEAD = "a" * 40
@@ -11,7 +13,9 @@ NAMES = ("unit-tests", "plugin-contract", "deployment-smoke")
 
 def run(run_id, sha, event, branch, completed_at, pr_number=None):
     obj = dict(id=run_id, run_attempt=1, head_sha=sha, event=event,
-               head_branch=branch, status="completed", conclusion="success",
+               head_branch=branch, repository=REPOSITORY,
+               workflow_path=WORKFLOW_PATH,
+               status="completed", conclusion="success",
                completed_at=completed_at,
                jobs=[dict(name=name, status="completed", conclusion="success",
                           head_sha=sha, run_id=run_id, run_attempt=1)
@@ -27,7 +31,8 @@ def evidence():
                     started_at="2026-11-01T22:02:00Z",
                     completed_at="2026-11-01T22:12:00Z")
     github = dict(automation_run_id=ID,
-                  pr=dict(number=15, head_sha=HEAD, merge_commit_sha=MERGE,
+                  pr=dict(number=15, repository=REPOSITORY,
+                          head_sha=HEAD, merge_commit_sha=MERGE,
                           merged=True, base_branch="main",
                           head_branch="test/correlation",
                           created_at="2026-11-01T22:03:00Z",
@@ -60,6 +65,24 @@ class CorrelationTests(unittest.TestCase):
 
     def test_bool_pr_number(self):
         self.reject(lambda p, g: g["pr"].update(number=True))
+
+    def test_wrong_pr_repository(self):
+        self.reject(lambda p, g: g["pr"].update(repository="attacker/repo"))
+
+    def test_wrong_pr_ci_repository(self):
+        self.reject(lambda p, g: g["pr_ci"].update(repository="attacker/repo"))
+
+    def test_wrong_postmerge_repository(self):
+        self.reject(lambda p, g: g["postmerge_ci"].update(repository="attacker/repo"))
+
+    def test_wrong_pr_ci_workflow(self):
+        self.reject(lambda p, g: g["pr_ci"].update(workflow_path=".github/workflows/untrusted.yml"))
+
+    def test_wrong_postmerge_workflow(self):
+        self.reject(lambda p, g: g["postmerge_ci"].update(workflow_path=".github/workflows/untrusted.yml"))
+
+    def test_missing_workflow_identity(self):
+        self.reject(lambda p, g: g["pr_ci"].pop("workflow_path"))
 
     def test_wrong_pr_ci_branch(self):
         self.reject(lambda p, g: g["pr_ci"].update(head_branch="main"))
