@@ -5,6 +5,7 @@ on:
     branches: [main]
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: phase1-live-artifact-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -29,10 +30,13 @@ jobs:
           path: evidence-checkout
           persist-credentials: false
       - name: Verify historical checkout and attest actual public artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$(git -C evidence-checkout rev-parse HEAD)" = "f6f962fc17b042e120c1d14f164e2dfbdc638932"
           python3 -m scripts.attest_live_patch_artifact \
+            --use-actions-token \
             --run-id 41463730359 \
             --artifact-id 13150032636 \
             --expected-head f6f962fc17b042e120c1d14f164e2dfbdc638932 \
