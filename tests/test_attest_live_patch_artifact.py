@@ -62,7 +62,7 @@ class LiveAttestationTests(unittest.TestCase):
         self.zip = buf.getvalue()
         self.artifact["digest"] = "sha256:" + hashlib.sha256(self.zip).hexdigest()
 
-    def verify(self, *, head_get=None):
+    def verify(self, *, head_get=None, json_get_override=None):
         def json_get(url):
             if url == API + f"/actions/runs/{RUN_ID}":
                 return self.run
@@ -70,7 +70,7 @@ class LiveAttestationTests(unittest.TestCase):
                 return {"artifacts": [self.artifact]}
             raise AssertionError("unexpected API URL: " + url)
         return attest(RUN_ID, ARTIFACT_ID, expected_head=HEAD,
-                      checkout_root=self.checkout, json_get=json_get,
+                      checkout_root=self.checkout, json_get=json_get_override or json_get,
                       zip_get=lambda url: self.zip,
                       head_get=head_get or (lambda root: HEAD))
 
@@ -85,6 +85,33 @@ class LiveAttestationTests(unittest.TestCase):
         self.assertFalse(result["pr_eligible_after_independent_run_check"])
         self.assertEqual(result["scheduler_invocation_attestation"], "UNAVAILABLE")
         self.assertEqual(result["ai_authored_pr_merge"], "NOT_PROVEN")
+
+    def test_run_rerun_during_artifact_validation_is_rejected(self):
+        calls = {"run": 0}
+        def changing_json(url):
+            if url.endswith("/artifacts"):
+                return {"artifacts": [self.artifact]}
+            calls["run"] += 1
+            if calls["run"] == 2:
+                return {**self.run, "run_attempt": 2}
+            return dict(self.run)
+        with self.assertRaisesRegex(InvalidPromotion, "changed during attestation"):
+            self.verify(json_get_override=changing_json)
+        self.assertEqual(calls["run"], 2)
+
+    def test_artifact_replacement_during_validation_is_rejected(self):
+        calls = {"listing": 0}
+        def changing_json(url):
+            if url.endswith("/artifacts"):
+                calls["listing"] += 1
+                if calls["listing"] == 2:
+                    return {"artifacts": [{**self.artifact, "digest":
+                                          "sha256:" + "0" * 64}]}
+                return {"artifacts": [dict(self.artifact)]}
+            return dict(self.run)
+        with self.assertRaisesRegex(InvalidPromotion, "changed during attestation"):
+            self.verify(json_get_override=changing_json)
+        self.assertEqual(calls["listing"], 2)
 
     def test_wrong_checkout_head(self):
         self.rejected_checkout = lambda root: "b" * 40
