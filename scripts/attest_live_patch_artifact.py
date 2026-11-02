@@ -144,6 +144,11 @@ def attest(run_id, artifact_id, *, expected_head, checkout_root,
                 or run["run_attempt"] <= 0):
             raise InvalidPromotion("live run identity or outcome mismatch")
         listing = json_get(API + "/actions/runs/" + str(run_id) + "/artifacts")
+        # Pin the complete external API snapshots before processing untrusted ZIP.
+        # Canonical JSON distinguishes booleans from integers and catches
+        # in-place mutation of mocked or reused response dictionaries.
+        run_snapshot = json.dumps(run, sort_keys=True, allow_nan=False)
+        listing_snapshot = json.dumps(listing, sort_keys=True, allow_nan=False)
         artifacts = listing["artifacts"]
         if type(artifacts) is not list:
             raise InvalidPromotion("invalid artifact listing")
@@ -181,6 +186,15 @@ def attest(run_id, artifact_id, *, expected_head, checkout_root,
             verdict = validate_artifact(
                 tmp, expected_head=expected_head, expected_run_id=run_id,
                 expected_attempt=run["run_attempt"], checkout_root=checkout_root)
+        # The run can be rerun, cancelled or have artifacts replaced between
+        # initial lookup and promotion. Re-fetch instead of trusting a stale
+        # pre-download snapshot. A drift is a safe rejection, never a promotion.
+        if (json.dumps(json_get(API + "/actions/runs/" + str(run_id)),
+                       sort_keys=True, allow_nan=False) != run_snapshot
+                or json.dumps(json_get(API + "/actions/runs/" + str(run_id)
+                                       + "/artifacts"),
+                              sort_keys=True, allow_nan=False) != listing_snapshot):
+            raise InvalidPromotion("live GitHub run/artifact changed during attestation")
         return {
             **verdict,
             "github_run_api_attestation": "VERIFIED_METADATA_AND_ARCHIVE",
