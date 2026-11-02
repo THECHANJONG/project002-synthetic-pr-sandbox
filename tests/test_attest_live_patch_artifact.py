@@ -7,7 +7,8 @@ import tempfile
 import unittest
 import zipfile
 
-from scripts.attest_live_patch_artifact import API, WORKFLOW, attest
+from scripts.attest_live_patch_artifact import (API, WORKFLOW, attest,
+                                                _artifact_request, _HTTPSOnlyRedirect)
 from scripts.prepare_patch_artifact import CODE, PROJECT_REPO, TARGET
 from scripts.validate_patch_promotion import InvalidPromotion
 
@@ -163,6 +164,50 @@ class LiveAttestationTests(unittest.TestCase):
     def test_nonfinite_artifact_id(self):
         self.artifact["id"] = True
         self.rejected()
+
+
+class ArtifactAuthorizationSafetyTests(unittest.TestCase):
+    """Logic-only: no token grant, no network call, no credential output."""
+
+    def test_optional_token_is_initial_request_only(self):
+        url = API + "/actions/artifacts/123/zip"
+        request = _artifact_request(url, token="synthetic-test-token")
+        self.assertEqual(request.unredirected_hdrs.get("Authorization"),
+                         "Bearer synthetic-test-token")
+        self.assertNotIn("Authorization", request.headers)
+        redirected = _HTTPSOnlyRedirect().redirect_request(
+            request, None, 302, "Found", {},
+            "https://artifact.example/download")
+        self.assertNotIn("Authorization", redirected.headers)
+        self.assertNotIn("Authorization", redirected.unredirected_hdrs)
+
+    def test_http_downgrade_is_blocked(self):
+        request = _artifact_request(API + "/actions/artifacts/123/zip",
+                                    token="synthetic-test-token")
+        with self.assertRaises(InvalidPromotion):
+            _HTTPSOnlyRedirect().redirect_request(
+                request, None, 302, "Found", {},
+                "http://artifact.example/download")
+
+    def test_untrusted_api_hosts_are_blocked(self):
+        for url in ("http://api.github.com/repos/x/y/actions/artifacts/1/zip",
+                    "https://api.github.com.evil.example/actions/artifacts/1/zip",
+                    "https://artifact.example/download",
+                    API + "/actions/runs/123"):
+            with self.subTest(url=url), self.assertRaises(InvalidPromotion):
+                _artifact_request(url, token="synthetic-test-token")
+
+    def test_malformed_token_is_blocked(self):
+        url = API + "/actions/artifacts/123/zip"
+        for token in ("", "  ", "abc\\r\\nX: injected", False, 12):
+            with self.subTest(token_type=type(token).__name__):
+                with self.assertRaises(InvalidPromotion):
+                    _artifact_request(url, token=token)
+
+    def test_default_request_has_no_credentials(self):
+        request = _artifact_request(API + "/actions/artifacts/123/zip")
+        self.assertNotIn("Authorization", request.headers)
+        self.assertNotIn("Authorization", request.unredirected_hdrs)
 
 
 if __name__ == "__main__":
