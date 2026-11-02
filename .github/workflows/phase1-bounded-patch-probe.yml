@@ -40,9 +40,20 @@ jobs:
           if-no-files-found: error
           overwrite: false
           retention-days: 1
-      - name: State explicit acceptance boundary
+      - name: State exact acceptance boundary
         run: |
-          echo 'CODE_PATCH_ARTIFACT=YES'
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path("phase1-patch-evidence/receipt.json").read_text())
+          status = receipt["candidate_status"]
+          if status not in ("CREATE_ONLY", "ALREADY_PRESENT"):
+              raise SystemExit("unknown candidate status")
+          if (status == "ALREADY_PRESENT") != (receipt["patch_bytes"] == 0):
+              raise SystemExit("candidate status/patch size mismatch")
+          print("CODE_PATCH_ARTIFACT=" + ("YES" if status == "CREATE_ONLY" else "NO"))
+          print("CANDIDATE_STATUS=" + status)
+          PY
           echo 'AI_GENERATED_CODE=NO'
           echo 'PR_CREATED_BY_WORKFLOW=NO'
           echo 'REMOTE_MERGE_BY_WORKFLOW=NO'

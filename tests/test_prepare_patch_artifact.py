@@ -1,10 +1,10 @@
-"""Negative controls for read-only, bounded GitHub Actions patch preparation."""
+"""Negative controls for read-only, bounded and idempotent patch preparation."""
 import hashlib
 import json
 from pathlib import Path
 import tempfile
 import unittest
-from scripts.prepare_patch_artifact import prepare, InvalidProvenance, TARGET
+from scripts.prepare_patch_artifact import prepare, InvalidProvenance, TARGET, CODE
 
 SHA = "a" * 40
 ENV = {
@@ -22,8 +22,9 @@ class PatchArtifactTests(unittest.TestCase):
     def test_patch_and_manifest_match_exact_hash(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "artifact"
-            receipt = prepare(dict(ENV), output_dir=root)
+            receipt = prepare(dict(ENV), output_dir=root, checkout_root=d)
             patch = (root / "candidate.patch").read_bytes()
+            self.assertEqual("CREATE_ONLY", receipt["candidate_status"])
             self.assertEqual(hashlib.sha256(patch).hexdigest(), receipt["patch_sha256"])
             self.assertEqual(len(patch), receipt["patch_bytes"])
             self.assertIn("+++ b/" + TARGET, patch.decode())
@@ -31,10 +32,40 @@ class PatchArtifactTests(unittest.TestCase):
             self.assertFalse(receipt["github_main_merged"])
             self.assertEqual(receipt, json.loads((root / "receipt.json").read_text()))
 
+    def test_existing_equivalent_code_is_no_change(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / TARGET
+            target.parent.mkdir()
+            target.write_text(CODE.replace("# Synthetic bounded code candidate; not deployed or merged.",
+                "# Already promoted, comment changed after review."))
+            root = Path(d) / "artifact"
+            receipt = prepare(dict(ENV), output_dir=root, checkout_root=d)
+            self.assertEqual("ALREADY_PRESENT", receipt["candidate_status"])
+            self.assertEqual(0, receipt["patch_bytes"])
+            self.assertEqual("", (root / "candidate.patch").read_text())
+            self.assertEqual(hashlib.sha256(b"").hexdigest(), receipt["patch_sha256"])
+
+    def test_existing_modified_code_is_fail_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / TARGET
+            target.parent.mkdir()
+            target.write_text(CODE.replace("github-actions-readonly", "unexpected"))
+            with self.assertRaises(InvalidProvenance):
+                prepare(dict(ENV), output_dir=Path(d) / "artifact", checkout_root=d)
+            self.assertFalse((Path(d) / "artifact").exists())
+
+    def test_existing_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / TARGET
+            target.parent.mkdir()
+            target.symlink_to(Path(d) / "missing")
+            with self.assertRaises(InvalidProvenance):
+                prepare(dict(ENV), output_dir=Path(d) / "artifact", checkout_root=d)
+
     def test_main_push_accepted(self):
         env = dict(ENV, GITHUB_EVENT_NAME="push", GITHUB_REF="refs/heads/main")
         with tempfile.TemporaryDirectory() as d:
-            self.assertEqual("push", prepare(env, output_dir=Path(d)/"artifact")["event"])
+            self.assertEqual("push", prepare(env, output_dir=Path(d)/"artifact", checkout_root=d)["event"])
 
     def test_rejects_mismatched_head(self):
         self.reject(CHECKED_OUT_HEAD="b" * 40)
@@ -66,7 +97,7 @@ class PatchArtifactTests(unittest.TestCase):
             root.mkdir()
             (root / "receipt.json").write_text("protected")
             with self.assertRaises(InvalidProvenance):
-                prepare(dict(ENV), output_dir=root)
+                prepare(dict(ENV), output_dir=root, checkout_root=d)
             self.assertEqual("protected", (root / "receipt.json").read_text())
 
     def reject(self, **changes):
@@ -74,7 +105,7 @@ class PatchArtifactTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "artifact"
             with self.assertRaises(InvalidProvenance):
-                prepare(env, output_dir=root)
+                prepare(env, output_dir=root, checkout_root=d)
             self.assertFalse(root.exists())
 
 
