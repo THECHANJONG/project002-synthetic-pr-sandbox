@@ -8,6 +8,7 @@ atomic fencing or independent-worker/crash-recovery proof.
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import re
+import math
 
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _UTC = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
@@ -24,6 +25,40 @@ def _utc_time(value):
         return datetime.fromisoformat(value[:-1] + "+00:00")
     except ValueError as exc:
         raise UnsafeTransition("invalid lease expiration") from exc
+
+
+def _strict_json(value, *, _depth=0, _budget=None):
+    """Reject non-JSON receipts before proposing an external CAS mutation.
+
+    Exact Python types avoid bool/int and subclass coercion; bounded traversal
+    rejects cycles and pathological nesting. This is a CLIENT-SIDE guard only.
+    """
+    if _budget is None:
+        _budget = [10000]
+    _budget[0] -= 1
+    if _budget[0] < 0 or _depth > 64:
+        raise UnsafeTransition("JSON receipt exceeds bounded traversal")
+    if value is None or type(value) in (str, bool):
+        return
+    if type(value) is int:
+        if value.bit_length() > 4096:
+            raise UnsafeTransition("JSON receipt integer too large")
+        return
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise UnsafeTransition("JSON receipt contains nonfinite number")
+        return
+    if type(value) is list:
+        for item in value:
+            _strict_json(item, _depth=_depth + 1, _budget=_budget)
+        return
+    if type(value) is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise UnsafeTransition("JSON receipt key must be text")
+            _strict_json(item, _depth=_depth + 1, _budget=_budget)
+        return
+    raise UnsafeTransition("JSON receipt contains unsupported Python type")
 
 
 def _validate(snapshot, *, current_blob_sha, expected_blob_sha,
@@ -46,6 +81,7 @@ def _validate(snapshot, *, current_blob_sha, expected_blob_sha,
     lease = snapshot.get("lease")
     if not isinstance(lease, dict) or not isinstance(snapshot.get("records"), dict):
         raise UnsafeTransition("invalid lease or records")
+    _strict_json(snapshot["records"])
     if (type(lease.get("owner")) is not str or not lease["owner"].strip()
             or type(lease.get("token")) is not int or lease["token"] < 1):
         raise UnsafeTransition("invalid lease owner or fencing token")
@@ -70,6 +106,7 @@ def guarded_record_write(snapshot, *, current_blob_sha, expected_blob_sha,
     # readback; neither a same-value retry nor a new value may overwrite it.
     if record_key in snapshot["records"]:
         raise UnsafeTransition("receipt key already exists; read back instead")
+    _strict_json(value)
     updated = deepcopy(snapshot)
     updated["revision"] += 1
     updated["records"][record_key] = deepcopy(value)
