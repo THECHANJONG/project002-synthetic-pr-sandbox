@@ -1,0 +1,50 @@
+# Read-only Actions-host experiment: generates an immutable candidate patch artifact.
+# Not AI coding, not a GitHub PR/merge, not a scheduled ChatGPT invocation.
+name: phase1-bounded-patch-probe
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: phase1-bounded-patch-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  prepare-bounded-patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact event HEAD without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact HEAD and prepare read-only candidate
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export CHECKED_OUT_HEAD="$(git rev-parse HEAD)"
+          test "$CHECKED_OUT_HEAD" = "$EXPECTED_HEAD"
+          python3 -m scripts.prepare_patch_artifact
+          python3 -m unittest discover -s tests -p 'test_prepare_patch_artifact.py' -v
+          git diff --exit-code -- .
+          git diff --cached --exit-code -- .
+      - name: Upload immutable bounded patch and run receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1-bounded-patch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: phase1-patch-evidence/
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 1
+      - name: State explicit acceptance boundary
+        run: |
+          echo 'CODE_PATCH_ARTIFACT=YES'
+          echo 'AI_GENERATED_CODE=NO'
+          echo 'PR_CREATED_BY_WORKFLOW=NO'
+          echo 'REMOTE_MERGE_BY_WORKFLOW=NO'
+          echo 'SCHEDULER_TO_GITHUB_CAUSAL_PROOF=UNAVAILABLE'
+          echo 'ORIGINAL_REPOSITORY_MODIFIED=NO'
