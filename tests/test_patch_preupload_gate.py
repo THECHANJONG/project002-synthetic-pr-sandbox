@@ -16,7 +16,7 @@ def contract_errors(source):
     errors = []
     if not re.search(r"(?m)^permissions:\n  contents: read\n", source):
         errors.append("token permission changed")
-    if re.search(r"(?m)^\\s+[a-z_-]+:\\s*write\\s*$", source):
+    if re.search(r"(?m)^\s+[a-z_-]+:\s*write\s*$", source):
         errors.append("write permission requested")
     if any(source.count(marker) != 1 for marker in (PREPARE, GATE, VALIDATE, UPLOAD)):
         return errors + ["missing or duplicate preparation, validation or upload"]
@@ -86,6 +86,10 @@ class PreuploadGateContractTests(unittest.TestCase):
     def test_rejects_permission_expansion(self):
         self.assertTrue(contract_errors(self.source.replace(
             "contents: read", "contents: write", 1)))
+
+    def test_rejects_added_write_scope(self):
+        self.assertTrue(contract_errors(self.source.replace(
+            "  contents: read\\n", "  contents: read\\n  actions: write\\n", 1)))
 
 
 if __name__ == "__main__":
