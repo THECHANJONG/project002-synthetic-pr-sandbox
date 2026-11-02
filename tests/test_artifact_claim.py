@@ -1,6 +1,6 @@
 """Fail-closed controls: same-name artifact uploads are not a lock."""
 import unittest
-from scripts.verify_artifact_claim import InvalidArtifactClaim, verify_claim
+from scripts.verify_artifact_claim import InvalidArtifactClaim, verify_claim, verify_inventory
 
 HEAD = "a" * 40
 RUN = "41310000000"
@@ -59,6 +59,94 @@ class ArtifactCounterexampleTests(unittest.TestCase):
     def test_invalid_run_id(self):
         with self.assertRaises(InvalidArtifactClaim):
             verify_claim(A, B, CLAIM, HEAD, "0")
+
+
+    def sample_inventory(self):
+        return {"total_count": 2, "artifacts": [
+            {"id": int(worker["artifact_id"]),
+             "name": "phase1-synthetic-single-create", "expired": False,
+             "workflow_run": {"id": int(RUN), "repository_id": 123456,
+                              "head_repository_id": 123456,
+                              "head_branch": "main", "head_sha": HEAD}}
+            for worker in (A, B)
+        ]}
+
+    def test_live_inventory_binds_both_artifacts_without_claiming_cas(self):
+        result = verify_inventory(A, B, self.sample_inventory(), HEAD, RUN)
+        self.assertEqual(result["github_artifact_inventory_crosscheck"], "VERIFIED")
+        self.assertEqual(result["second_artifact_readback"], "METADATA_ONLY_VERIFIED")
+        self.assertFalse(result["artifact_name_is_safe_lock"])
+        self.assertEqual(result["shared_durable_cas"], "NOT_PROVEN")
+
+    def test_rejects_incomplete_inventory(self):
+        inv = self.sample_inventory()
+        inv["artifacts"].pop()
+        self.reject_inventory(inv)
+
+    def test_rejects_forged_total_count(self):
+        inv = self.sample_inventory()
+        inv["total_count"] = True
+        self.reject_inventory(inv)
+
+    def test_rejects_unknown_artifact_id(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["id"] += 1
+        self.reject_inventory(inv)
+
+    def test_rejects_duplicate_artifact_id(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][1]["id"] = inv["artifacts"][0]["id"]
+        self.reject_inventory(inv)
+
+    def test_rejects_wrong_name(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["name"] = "other"
+        self.reject_inventory(inv)
+
+    def test_rejects_expired_artifact(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][1]["expired"] = True
+        self.reject_inventory(inv)
+
+    def test_rejects_other_run(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["workflow_run"]["id"] += 1
+        self.reject_inventory(inv)
+
+    def test_rejects_other_head(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["workflow_run"]["head_sha"] = "b" * 40
+        self.reject_inventory(inv)
+
+    def test_rejects_other_branch(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["workflow_run"]["head_branch"] = "test"
+        self.reject_inventory(inv)
+
+    def test_rejects_fork_repository_mismatch(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["workflow_run"]["head_repository_id"] = 999
+        self.reject_inventory(inv)
+
+    def test_rejects_cross_repository_inventory(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["workflow_run"]["repository_id"] = 999
+        inv["artifacts"][0]["workflow_run"]["head_repository_id"] = 999
+        self.reject_inventory(inv)
+
+    def test_rejects_bool_artifact_id(self):
+        inv = self.sample_inventory()
+        inv["artifacts"][0]["id"] = True
+        self.reject_inventory(inv)
+
+    def test_rejects_missing_origin(self):
+        inv = self.sample_inventory()
+        del inv["artifacts"][0]["workflow_run"]
+        self.reject_inventory(inv)
+
+    def reject_inventory(self, inventory):
+        with self.assertRaises(InvalidArtifactClaim):
+            verify_inventory(A, B, inventory, HEAD, RUN)
 
     def reject(self, a, b, claim):
         with self.assertRaises(InvalidArtifactClaim):
