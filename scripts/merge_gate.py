@@ -30,6 +30,9 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head,
         errors.append("base changed")
     if pr.get("head_sha") != expected_head:
         errors.append("head changed")
+    if (type(pr.get("head_branch")) is not str or not pr["head_branch"]
+            or pr["head_branch"] == "main"):
+        errors.append("PR source branch not verified")
     if pr.get("state") != "open" or pr.get("draft") is not False:
         errors.append("PR not ready")
     if pr.get("mergeable") is not True:
@@ -80,6 +83,7 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head,
             or run.get("head_sha") != expected_head
             or run.get("repository") != expected_repo
             or run.get("workflow_path") != expected_workflow
+            or run.get("head_branch") != pr.get("head_branch")
             or run.get("pr_number") != pr.get("number")
             or type(run.get("pr_number")) is not int
             or run.get("event") != "pull_request"
