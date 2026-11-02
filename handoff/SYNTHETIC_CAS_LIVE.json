@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "project_id": "PROJECT_002_SYNTHETIC",
+  "revision": 0,
+  "lease": {
+    "owner": "bootstrap-fixture",
+    "token": 1,
+    "expires_at": "2026-11-01T00:00:00Z"
+  },
+  "records": {}
+}
