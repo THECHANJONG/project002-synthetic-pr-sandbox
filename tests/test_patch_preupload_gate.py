@@ -89,7 +89,7 @@ class PreuploadGateContractTests(unittest.TestCase):
 
     def test_rejects_added_write_scope(self):
         self.assertTrue(contract_errors(self.source.replace(
-            "  contents: read\\n", "  contents: read\\n  actions: write\\n", 1)))
+            "  contents: read\n", "  contents: read\n  actions: write\n", 1)))
 
 
 if __name__ == "__main__":
