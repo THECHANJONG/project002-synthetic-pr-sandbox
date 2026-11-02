@@ -8,13 +8,13 @@ HEAD = "b" * 40
 REPO = "THECHANJONG/project002-synthetic-pr-sandbox"
 WORKFLOW = ".github/workflows/synthetic-ci.yml"
 RUN = dict(id=123, run_attempt=2, head_sha=HEAD, repository=REPO,
-           workflow_path=WORKFLOW, pr_number=42, event="pull_request",
+           workflow_path=WORKFLOW, head_branch="fix/synthetic-test", pr_number=42, event="pull_request",
            status="completed", conclusion="success")
 NAMES = ("unit-tests", "plugin-contract", "deployment-smoke")
 
 
 def evidence():
-    pr = dict(number=42, repository=REPO, base_branch="main", base_sha=BASE, head_sha=HEAD,
+    pr = dict(number=42, repository=REPO, base_branch="main", head_branch="fix/synthetic-test", base_sha=BASE, head_sha=HEAD,
               state="open", draft=False, mergeable=True)
     rules = dict(enforcement="active", branch="main", bypass_actors=[],
                  current_user_can_bypass="never", branch_protected=True,
@@ -111,6 +111,24 @@ class MergeGateTests(unittest.TestCase):
     def test_wrong_workflow_rejected(self):
         self.assertTrue(verify_merge_evidence(*evidence(), expected_base=BASE,
                         expected_head=HEAD, run={**RUN, "workflow_path": "other.yml"},
+                        expected_repo=REPO, expected_workflow=WORKFLOW))
+
+    def test_missing_pr_source_branch_rejected(self):
+        self.check_rejected(lambda d: d[0].pop("head_branch"))
+
+    def test_main_as_pr_source_branch_rejected(self):
+        self.check_rejected(lambda d: d[0].update(head_branch="main"))
+
+    def test_wrong_workflow_head_branch_rejected(self):
+        self.assertTrue(verify_merge_evidence(*evidence(), expected_base=BASE,
+                        expected_head=HEAD, run={**RUN, "head_branch": "other/branch"},
+                        expected_repo=REPO, expected_workflow=WORKFLOW))
+
+    def test_missing_workflow_head_branch_rejected(self):
+        bad_run = dict(RUN)
+        bad_run.pop("head_branch")
+        self.assertTrue(verify_merge_evidence(*evidence(), expected_base=BASE,
+                        expected_head=HEAD, run=bad_run,
                         expected_repo=REPO, expected_workflow=WORKFLOW))
 
     def test_wrong_pr_binding_rejected(self):
