@@ -90,6 +90,7 @@ def verify_inventory(a, b, inventory, expected_head, run_id):
         raise InvalidArtifactClaim("invalid inventory head")
     ids = set()
     repository_ids = set()
+    head_branches = set()
     for artifact in inventory["artifacts"]:
         if type(artifact) is not dict:
             raise InvalidArtifactClaim("malformed artifact record")
@@ -105,13 +106,16 @@ def verify_inventory(a, b, inventory, expected_head, run_id):
         repo_id = origin.get("repository_id")
         if (type(origin.get("id")) is not int or origin["id"] != int(run_id)
                 or origin.get("head_sha") != expected_head
-                or origin.get("head_branch") != "main"
+                or type(origin.get("head_branch")) is not str
+                or not origin["head_branch"]
                 or type(repo_id) is not int or repo_id <= 0
                 or type(origin.get("head_repository_id")) is not int
                 or origin["head_repository_id"] != repo_id):
             raise InvalidArtifactClaim("artifact bound to different run, head or repository")
         repository_ids.add(repo_id)
-    if len(repository_ids) != 1 or ids != {int(a["artifact_id"]), int(b["artifact_id"])}:
+        head_branches.add(origin["head_branch"])
+    if (len(repository_ids) != 1 or len(head_branches) != 1
+            or ids != {int(a["artifact_id"]), int(b["artifact_id"])}):
         raise InvalidArtifactClaim("artifact inventory differs from independent host outputs")
     return {
         "github_artifact_inventory_crosscheck": "VERIFIED",
