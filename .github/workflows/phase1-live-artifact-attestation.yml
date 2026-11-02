@@ -1,0 +1,57 @@
+# Read-only, fail-closed live artifact proof. No scheduler, AI authoring, PR or merge claim.
+name: phase1-live-artifact-attestation
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/phase1-live-artifact-attestation.yml']
+permissions:
+  contents: read
+concurrency:
+  group: phase1-live-artifact-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  attest-real-artifact:
+    if: ${{ github.event.pull_request.number == 28 && github.event.pull_request.head.repo.full_name == 'THECHANJONG/project002-synthetic-pr-sandbox' }}
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout workflow from exact PR HEAD
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify workflow checkout
+        env:
+          EXPECTED_VERIFIER_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_VERIFIER_HEAD"
+      - name: Checkout pinned merged authenticated attestor
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: fe722a740c3f5f2174368a53acf93f8f8c7661e4
+          path: attestor-checkout
+          persist-credentials: false
+      - name: Verify pinned attestor checkout
+        run: test "$(git -C attestor-checkout rev-parse HEAD)" = "fe722a740c3f5f2174368a53acf93f8f8c7661e4"
+      - name: Checkout immutable source run HEAD without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: f6f962fc17b042e120c1d14f164e2dfbdc638932
+          path: evidence-checkout
+          persist-credentials: false
+      - name: Verify historical checkout and attest actual public artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git -C evidence-checkout rev-parse HEAD)" = "f6f962fc17b042e120c1d14f164e2dfbdc638932"
+          (cd attestor-checkout && python3 -m scripts.attest_live_patch_artifact \
+            --use-actions-token \
+            --run-id 41463730359 \
+            --artifact-id 13150032636 \
+            --expected-head f6f962fc17b042e120c1d14f164e2dfbdc638932 \
+            --checkout ../evidence-checkout)
+          git diff --exit-code -- .
+          git diff --cached --exit-code -- .
