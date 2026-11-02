@@ -199,7 +199,7 @@ class ArtifactAuthorizationSafetyTests(unittest.TestCase):
 
     def test_malformed_token_is_blocked(self):
         url = API + "/actions/artifacts/123/zip"
-        for token in ("", "  ", "abc\\r\\nX: injected", False, 12):
+        for token in ("", "  ", "abc\r\nX: injected", False, 12):
             with self.subTest(token_type=type(token).__name__):
                 with self.assertRaises(InvalidPromotion):
                     _artifact_request(url, token=token)
