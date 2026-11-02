@@ -1,9 +1,9 @@
-"""Prepare a bounded synthetic code patch on a read-only GitHub Actions runner.
+"""Create a bounded, idempotent synthetic patch artifact on a read-only runner.
 
-This is a deterministic executor/attestation *component*, NOT AI code writing,
-GitHub PR creation, a remote CAS lease, or scheduler-origin proof. It must not
-change the checkout, use credentials, or write to the authoritative repository.
+No AI authoring, GitHub PR/merge, remote lease or scheduler-origin proof.
+Existing equivalent code is a verified NO_CHANGE, never a second add-file patch.
 """
+import ast
 import difflib
 import hashlib
 import json
@@ -25,8 +25,29 @@ class InvalidProvenance(ValueError):
     pass
 
 
-def prepare(env, *, output_dir):
-    """Return receipt; emit one patch and manifest, never edit the checkout."""
+def _candidate(checkout_root):
+    target = Path(checkout_root) / TARGET
+    if target.is_symlink():
+        raise InvalidProvenance("target symlink rejected")
+    if not target.exists():
+        return "CREATE_ONLY", "".join(difflib.unified_diff(
+            [], CODE.splitlines(keepends=True),
+            fromfile="/dev/null", tofile="b/" + TARGET,
+        ))
+    if not target.is_file() or target.stat().st_size > 4096:
+        raise InvalidProvenance("existing target is not a bounded regular file")
+    try:
+        existing = target.read_text(encoding="utf-8")
+        if ast.dump(ast.parse(existing), include_attributes=False) != ast.dump(
+                ast.parse(CODE), include_attributes=False):
+            raise InvalidProvenance("existing target differs from approved code")
+    except (SyntaxError, UnicodeError) as exc:
+        raise InvalidProvenance("existing target cannot be validated") from exc
+    return "ALREADY_PRESENT", ""
+
+
+def prepare(env, *, output_dir, checkout_root="."):
+    """Return receipt and immutable candidate artifact without changing checkout."""
     if env.get("GITHUB_REPOSITORY") != PROJECT_REPO:
         raise InvalidProvenance("wrong repository")
     expected = env.get("EXPECTED_HEAD")
@@ -50,12 +71,7 @@ def prepare(env, *, output_dir):
     output_dir = Path(output_dir)
     if output_dir.exists() and any(output_dir.iterdir()):
         raise InvalidProvenance("artifact output directory not empty")
-    # A create-only patch; no arbitrary paths, file contents or commands from
-    # events, comments, or user-controlled task descriptions are evaluated.
-    patch = "".join(difflib.unified_diff(
-        [], CODE.splitlines(keepends=True),
-        fromfile="/dev/null", tofile="b/" + TARGET,
-    ))
+    status, patch = _candidate(checkout_root)
     if len(patch.encode("utf-8")) > 4096:
         raise InvalidProvenance("patch exceeds bounded size")
     receipt = {
@@ -68,6 +84,7 @@ def prepare(env, *, output_dir):
         "run_id": int(run_id),
         "run_attempt": int(attempt),
         "target": TARGET,
+        "candidate_status": status,
         "patch_sha256": hashlib.sha256(patch.encode("utf-8")).hexdigest(),
         "patch_bytes": len(patch.encode("utf-8")),
         "github_pr_opened": False,
