@@ -90,6 +90,10 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head,
             or run.get("status") != "completed"
             or run.get("conclusion") != "success"):
         errors.append("PR workflow run identity/success unverified")
+    # The complete CI job inventory must be checked, not just a green subset.
+    # An extra failed security job must never be silently ignored.
+    if len(jobs) != len(REQUIRED):
+        errors.append("unexpected CI job count")
     seen = set()
     for job in jobs:
         if not isinstance(job, dict):
@@ -100,6 +104,7 @@ def verify_merge_evidence(pr, ruleset, jobs, *, expected_base, expected_head,
             errors.append("invalid job name")
             continue
         if name not in REQUIRED:
+            errors.append("unexpected CI job")
             continue
         if name in seen:
             errors.append("duplicate job")

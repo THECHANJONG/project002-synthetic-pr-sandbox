@@ -67,6 +67,21 @@ class MergeGateTests(unittest.TestCase):
     def test_missing_job(self):
         self.check_rejected(lambda d: d[2].pop())
 
+    def test_extra_failed_security_job_blocks_merge(self):
+        self.check_rejected(lambda d: d[2].append(dict(
+            name="security-audit", head_sha=HEAD, status="completed",
+            conclusion="failure", source="GitHub Actions",
+            run_id=123, run_attempt=2)))
+
+    def test_extra_successful_job_blocks_incomplete_inventory_claim(self):
+        self.check_rejected(lambda d: d[2].append(dict(
+            name="unexpected", head_sha=HEAD, status="completed",
+            conclusion="success", source="GitHub Actions",
+            run_id=123, run_attempt=2)))
+
+    def test_unknown_job_instead_of_required_job_blocks_merge(self):
+        self.check_rejected(lambda d: d[2][0].update(name="security-audit"))
+
     def test_duplicate_job(self):
         self.check_rejected(lambda d: d[2].append(copy.deepcopy(d[2][0])))
 
