@@ -1,4 +1,4 @@
-# Synthetic-only, approved write experiment. Never touches original repo or main state.
+# Synthetic-only GitHub CAS live experiment; user approved contents:write.
 name: phase1-cas-two-worker-write
 on:
   push:
@@ -18,10 +18,34 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Verify isolated CAS state and attempt conditional takeover
+      - name: Remote CAS attempt and stale fencing rejection
         env:
           GITHUB_TOKEN: ${{ github.token }}
           WORKER: ${{ matrix.worker }}
+        shell: bash
         run: |
           set -euo pipefail
-          python3 -m scripts.github_cas_worker takeover --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --ttl-seconds 600
+          set +e
+          output=$(python3 -m scripts.github_cas_worker takeover --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --ttl-seconds 600 2>&1)
+          rc=$?
+          set -e
+          echo "$output"
+          if [ "$rc" -eq 0 ]; then
+            echo "$output" | grep -q '"result": "SYNTHETIC_CAS_COMMITTED"'
+            # The old fencing token must never be accepted after takeover.
+            set +e
+            stale=$(python3 -m scripts.github_cas_worker write --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --token 1 --record-key stale-fence-probe 2>&1)
+            stale_rc=$?
+            set -e
+            echo "$stale"
+            test "$stale_rc" -eq 3
+            echo "$stale" | grep -q '"reason": "Blocked"'
+            echo "WINNER_AND_STALE_FENCE_REJECTED"
+          elif [ "$rc" -eq 3 ]; then
+            # Only a genuine CAS conflict or lease fencing rejection counts as safe.
+            echo "$output" | grep -Eq '"reason": "(Conflict|Blocked)"'
+            echo "LOSER_FAIL_CLOSED"
+          else
+            echo "UNEXPECTED_WORKER_ERROR"
+            exit 1
+          fi
