@@ -1,0 +1,60 @@
+# Synthetic-only GitHub CAS live experiment; user approved contents:write.
+name: phase1-cas-two-worker-write
+on:
+  push:
+    branches: [test/phase1-cas-two-worker-20261103]
+permissions:
+  contents: write
+jobs:
+  competing-worker:
+    if: github.repository == 'THECHANJONG/project002-synthetic-pr-sandbox' && github.ref == 'refs/heads/test/phase1-cas-two-worker-20261103'
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [A, B]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Remote CAS attempt and stale fencing rejection
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WORKER: ${{ matrix.worker }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output=$(python3 -m scripts.github_cas_worker takeover --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --ttl-seconds 600 2>&1)
+          rc=$?
+          set -e
+          echo "$output"
+          if [ "$rc" -eq 0 ]; then
+            echo "$output" | grep -q '"result": "SYNTHETIC_CAS_COMMITTED"'
+            token=$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+            test "$token" -gt 1
+            echo "EXPIRED_LEASE_TAKEOVER_DYNAMIC_TOKEN"
+            # The old fencing token must never be accepted after takeover.
+            set +e
+            stale=$(python3 -m scripts.github_cas_worker write --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --token "$((token - 1))" --record-key stale-fence-probe 2>&1)
+            stale_rc=$?
+            set -e
+            echo "$stale"
+            test "$stale_rc" -eq 3
+            echo "$stale" | grep -q '"reason": "Blocked"'
+            echo "WINNER_AND_PREVIOUS_FENCING_TOKEN_REJECTED"
+          elif [ "$rc" -eq 3 ]; then
+            # Only a genuine CAS conflict or lease fencing rejection counts as safe.
+            if echo "$output" | grep -q '"reason": "Conflict"'; then
+              echo "LOSER_REMOTE_CAS_CONFLICT"
+            elif echo "$output" | grep -q '"reason": "Blocked"'; then
+              echo "LOSER_GUARD_REJECTION_NOT_CAS_PROOF"
+            else
+              echo "UNEXPECTED_REJECTION_CLASS"
+              exit 1
+            fi
+          else
+            echo "UNEXPECTED_WORKER_ERROR"
+            exit 1
+          fi
