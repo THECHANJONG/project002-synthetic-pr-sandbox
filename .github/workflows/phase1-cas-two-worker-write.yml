@@ -1,0 +1,27 @@
+# Synthetic-only, approved write experiment. Never touches original repo or main state.
+name: phase1-cas-two-worker-write
+on:
+  push:
+    branches: [test/phase1-cas-two-worker-20261103]
+permissions:
+  contents: write
+jobs:
+  competing-worker:
+    if: github.repository == 'THECHANJONG/project002-synthetic-pr-sandbox' && github.ref == 'refs/heads/test/phase1-cas-two-worker-20261103'
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [A, B]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify isolated CAS state and attempt conditional takeover
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WORKER: ${{ matrix.worker }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.github_cas_worker takeover --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --ttl-seconds 600
