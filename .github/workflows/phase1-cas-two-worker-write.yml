@@ -43,8 +43,14 @@ jobs:
             echo "WINNER_AND_STALE_FENCE_REJECTED"
           elif [ "$rc" -eq 3 ]; then
             # Only a genuine CAS conflict or lease fencing rejection counts as safe.
-            echo "$output" | grep -Eq '"reason": "(Conflict|Blocked)"'
-            echo "LOSER_FAIL_CLOSED"
+            if echo "$output" | grep -q '"reason": "Conflict"'; then
+              echo "LOSER_REMOTE_CAS_CONFLICT"
+            elif echo "$output" | grep -q '"reason": "Blocked"'; then
+              echo "LOSER_GUARD_REJECTION_NOT_CAS_PROOF"
+            else
+              echo "UNEXPECTED_REJECTION_CLASS"
+              exit 1
+            fi
           else
             echo "UNEXPECTED_WORKER_ERROR"
             exit 1
