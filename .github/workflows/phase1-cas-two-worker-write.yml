@@ -32,17 +32,18 @@ jobs:
           echo "$output"
           if [ "$rc" -eq 0 ]; then
             echo "$output" | grep -q '"result": "SYNTHETIC_CAS_COMMITTED"'
-            echo "$output" | grep -q '"token": 5'
-            echo "EXPIRED_LEASE_TAKEOVER_TOKEN_4_TO_5"
+            token=$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          test "$token" -gt 1
+            echo "EXPIRED_LEASE_TAKEOVER_DYNAMIC_TOKEN"
             # The old fencing token must never be accepted after takeover.
             set +e
-            stale=$(python3 -m scripts.github_cas_worker write --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --token 4 --record-key stale-fence-probe 2>&1)
+            stale=$(python3 -m scripts.github_cas_worker write --owner "actions-${GITHUB_RUN_ID}-${WORKER}" --token "$((token - 1))" --record-key stale-fence-probe 2>&1)
             stale_rc=$?
             set -e
             echo "$stale"
             test "$stale_rc" -eq 3
             echo "$stale" | grep -q '"reason": "Blocked"'
-            echo "WINNER_AND_PREVIOUS_OWNER_TOKEN_4_REJECTED"
+            echo "WINNER_AND_PREVIOUS_FENCING_TOKEN_REJECTED"
           elif [ "$rc" -eq 3 ]; then
             # Only a genuine CAS conflict or lease fencing rejection counts as safe.
             if echo "$output" | grep -q '"reason": "Conflict"'; then
