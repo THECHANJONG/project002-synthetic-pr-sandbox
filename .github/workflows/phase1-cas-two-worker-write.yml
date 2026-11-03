@@ -33,7 +33,7 @@ jobs:
           if [ "$rc" -eq 0 ]; then
             echo "$output" | grep -q '"result": "SYNTHETIC_CAS_COMMITTED"'
             token=$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-          test "$token" -gt 1
+            test "$token" -gt 1
             echo "EXPIRED_LEASE_TAKEOVER_DYNAMIC_TOKEN"
             # The old fencing token must never be accepted after takeover.
             set +e
