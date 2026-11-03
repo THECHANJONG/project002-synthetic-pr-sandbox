@@ -1,0 +1,59 @@
+# PHASE 1 read-only prerequisite: two separate Actions jobs, no CAS writes.
+# This is NOT a 2-writer collision, lease takeover, crash recovery or AI cold start.
+name: phase1-two-worker-readonly
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/phase1-two-worker-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  read-shared-state:
+    if: ${{ github.event.pull_request.head.repo.full_name == 'THECHANJONG/project002-synthetic-pr-sandbox' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [worker-a, worker-b]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR HEAD without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify checkout and independently read isolated remote state
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          WORKER_ID: ${{ matrix.worker }}
+          ACTIONS_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          python3 - <<'PY'
+          import json
+          import os
+          from scripts.github_cas_worker import Client, BRANCH, PATH
+
+          blob, state = Client(os.environ['GITHUB_TOKEN']).read()
+          expected_blob = '18de2772978b00a929bb285c08eef86e157315ac'
+          if (blob != expected_blob or type(state.get('revision')) is not int
+                  or state['revision'] != 0 or state.get('records') != {}
+                  or type(state.get('lease')) is not dict
+                  or state['lease'].get('token') != 1):
+              raise SystemExit('FAIL_CLOSED: isolated remote state drift')
+          print(json.dumps({
+              'scope': 'READ_ONLY_TWO_INDEPENDENT_ACTIONS_JOBS',
+              'worker': os.environ['WORKER_ID'],
+              'run_id': os.environ['ACTIONS_RUN_ID'],
+              'branch': BRANCH, 'path': PATH,
+              'verified_blob_sha': blob,
+              'revision': state['revision'],
+              'cas_collision': 'NOT_PROVEN',
+              'fencing_crash_recovery': 'NOT_PROVEN',
+              'scheduler_causality': 'NOT_PROVEN',
+          }, sort_keys=True))
+          PY
+          git diff --exit-code -- .
+          git diff --cached --exit-code -- .
