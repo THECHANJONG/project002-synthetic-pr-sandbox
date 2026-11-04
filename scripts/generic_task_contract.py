@@ -10,9 +10,9 @@ import re
 class InvalidTask(ValueError):
     pass
 
-_REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\Z")
-_SHA = re.compile(r"[0-9a-f]{40}\\Z")
-_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\\Z")
+_REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
+_SHA = re.compile(r"[0-9a-f]{40}\Z")
+_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\Z")
 _ALLOWED = {"schema_version", "task_id", "repository", "base_sha", "objective", "allowed_paths", "acceptance_tests"}
 
 def _unique_pairs(pairs):
