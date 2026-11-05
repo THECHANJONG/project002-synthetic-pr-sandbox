@@ -1,0 +1,66 @@
+# Real CPU model invocation in an isolated public synthetic-only repository.
+# No repository write token, secrets, provider billing, PR or automatic merge.
+name: phase1-local-model-probe
+on:
+  push:
+    branches: [foundation/phase1-local-model-proof-20261106]
+    paths:
+      - scripts/phase1_local_model_probe.py
+      - tests/test_phase1_local_model_probe.py
+      - .github/workflows/phase1-local-model-probe.yml
+permissions:
+  contents: read
+jobs:
+  isolated-inference:
+    if: github.repository == 'THECHANJONG/project002-synthetic-pr-sandbox'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Verify isolated exact HEAD and offline safety tests
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          python -m unittest discover -s tests -p 'test_phase1_local_model_probe.py' -v
+      - name: Install CPU-only open-model runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            'torch==2.5.1' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            'transformers==4.46.3' 'huggingface-hub==0.26.5'
+      - name: Run pinned AI model and statically verify its code
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          CHECKED_OUT_HEAD: ${{ github.sha }}
+          HF_HUB_DISABLE_TELEMETRY: '1'
+          HF_HUB_DISABLE_XET: '1'
+          HF_HUB_ETAG_TIMEOUT: '25'
+          OMP_NUM_THREADS: '2'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/phase1_local_model_probe.py --output-dir "$RUNNER_TEMP/phase1-local-model-proof"
+          python -m py_compile "$RUNNER_TEMP/phase1-local-model-proof/candidate.py"
+          test -z "$(git status --porcelain)"
+          echo 'GITHUB_WRITE=NO; PR_CREATED=NO; MERGED=NO; UNATTENDED_E2E=NOT_PROVEN'
+      - name: Upload generated code and model-execution receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: phase1-local-model-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/phase1-local-model-proof/
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 3
