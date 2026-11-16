@@ -69,7 +69,8 @@ def normalize_candidate(raw):
     if len(fn.body) != 1 or type(fn.body[0]) is not ast.Return:
         raise ProbeBlocked("unexpected generated statements")
     value = fn.body[0].value
-    if not (type(value) is ast.BinOp\n            and type(value.op) is ({"add_numbers": ast.Add, "subtract_numbers": ast.Sub}[fn.name])
+    if not (type(value) is ast.BinOp
+            and type(value.op) is ({"add_numbers": ast.Add, "subtract_numbers": ast.Sub}[fn.name])
             and type(value.left) is ast.Name and value.left.id == "left"
             and type(value.right) is ast.Name and value.right.id == "right"):
         raise ProbeBlocked("wrong generated behavior")
