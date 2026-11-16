@@ -1,7 +1,9 @@
 name: synthetic-ci
 on:
+  # Run candidate validation once via pull_request; main still gets postmerge CI.
+  # Avoid duplicate push + pull_request runs for test branches.
   push:
-    branches: [main, 'test/**']
+    branches: [main]
   pull_request:
     branches: [main]
 permissions:
