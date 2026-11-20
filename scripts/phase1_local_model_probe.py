@@ -18,8 +18,8 @@ MODEL_REVISION = "ea3f2471cf1b1f0db85067f1ef93848e38e88c25"
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 PROMPT = (
     "Return Python source code only, with no Markdown, comments, imports, "
-    "or explanation. Define one function named subtract_numbers with exactly two "
-    "parameters named left and right, which returns left - right."
+    "or explanation. Define one function named multiply_numbers with exactly two "
+    "parameters named left and right, which returns left * right."
 )
 
 
@@ -59,18 +59,20 @@ def normalize_candidate(raw):
     if len(tree.body) != 1 or type(tree.body[0]) is not ast.FunctionDef:
         raise ProbeBlocked("model must produce one function only")
     fn = tree.body[0]
-    if fn.name not in ("add_numbers", "subtract_numbers") or fn.decorator_list or getattr(fn, "type_params", []):
+    if fn.name not in ("add_numbers", "subtract_numbers", "multiply_numbers") or fn.decorator_list or getattr(fn, "type_params", []):
         raise ProbeBlocked("wrong function identity")
     args = fn.args
     if (len(args.args) != 2 or [a.arg for a in args.args] != ["left", "right"]
             or args.posonlyargs or args.kwonlyargs or args.defaults or args.kw_defaults
-            or args.vararg is not None or args.kwarg is not None):
+            or args.vararg is not None or args.kwarg is not None
+            or any(a.annotation is not None for a in args.args)
+            or fn.returns is not None):
         raise ProbeBlocked("wrong function parameters")
     if len(fn.body) != 1 or type(fn.body[0]) is not ast.Return:
         raise ProbeBlocked("unexpected generated statements")
     value = fn.body[0].value
     if not (type(value) is ast.BinOp
-            and type(value.op) is ({"add_numbers": ast.Add, "subtract_numbers": ast.Sub}[fn.name])
+            and type(value.op) is ({"add_numbers": ast.Add, "subtract_numbers": ast.Sub, "multiply_numbers": ast.Mult}[fn.name])
             and type(value.left) is ast.Name and value.left.id == "left"
             and type(value.right) is ast.Name and value.right.id == "right"):
         raise ProbeBlocked("wrong generated behavior")
@@ -91,6 +93,7 @@ def run_probe(env, output_dir, inference):
     code = normalize_candidate(generated)
     receipt = {
         "proof_scope": "LOCAL_MODEL_GENERATION_STATIC_CHECK_ONLY",
+        "task_id": "phase1-multiply-20261120",
         "repository": REPOSITORY,
         "head_sha": head,
         "actions_run_id": int(env["GITHUB_RUN_ID"]),
@@ -128,11 +131,15 @@ def local_inference(prompt):
                 {"role": "user", "content": prompt}]
     inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True,
                                            return_tensors="pt")
+    attention_mask = torch.ones_like(inputs)
     with torch.inference_mode():
-        output = model.generate(inputs, do_sample=False, max_new_tokens=96,
+        output = model.generate(inputs, attention_mask=attention_mask, do_sample=False, max_new_tokens=96,
                                 pad_token_id=tokenizer.eos_token_id)
     tokens = output[0][inputs.shape[-1]:]
-    return tokenizer.decode(tokens, skip_special_tokens=True), {
+    generated = tokenizer.decode(tokens, skip_special_tokens=True)
+    if ast.parse(normalize_candidate(generated)).body[0].name != "multiply_numbers":
+        raise ProbeBlocked("wrong task identity")
+    return generated, {
         "model_revision": MODEL_REVISION,
         "model_loaded_and_generated": True,
         "generated_token_count": int(tokens.shape[0]),
