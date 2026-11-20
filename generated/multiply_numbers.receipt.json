@@ -1,0 +1,15 @@
+{
+  "actions_run_id": 44716200908,
+  "run_attempt": 1,
+  "artifact_id": 14619936244,
+  "artifact_sha256": "ddc77308b24fadea5d5ab5dd00214608563b33dbfba6ec1fe3f2ecbce0815356",
+  "candidate_bytes": 59,
+  "candidate_sha256": "386a0e356aac7a4c6ef4139fa37b7d80dcc70e1cfbdc0e7b71c26b922959214e",
+  "head_sha": "f302acec2271c5262ada25a425186afa0641be9a",
+  "model_id": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+  "model_revision": "ea3f2471cf1b1f0db85067f1ef93848e38e88c25",
+  "task_id": "phase1-multiply-20261120",
+  "scheduler_invocation_attestation": "UNAVAILABLE",
+  "proof_scope": "MODEL_GENERATION_AND_LOCAL_BEHAVIOR_TEST",
+  "github_writes": false
+}
